@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraceDesk PDF Editor</title>
+<meta name="theme-color" content="#14532D">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root { --g: #14532D; --g2: #166534; --amber: #F59E0B; --ink: #14281A; --line: #D6DED8; --bg: #E9EEEA; --muted: #4B5B4F; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--g); color: #fff; }
+  header h1 { font-size: 17px; margin: 0 10px 0 0; font-weight: 700; white-space: nowrap; }
+  header .file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .9; }
+  button { font: inherit; cursor: pointer; border: 1px solid transparent; border-radius: 8px; padding: 7px 12px; background: #fff; color: var(--ink); }
+  button:hover { border-color: var(--g2); }
+  button:focus-visible { outline: 3px solid var(--amber); outline-offset: 1px; }
+  button.primary { background: var(--amber); color: #1f1300; font-weight: 700; }
+  button.ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,.5); }
+  #tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 14px; background: #fff; border-bottom: 1px solid var(--line); }
+  #tools .sep { width: 1px; height: 26px; background: var(--line); margin: 0 4px; }
+  .tool { background: #EEF2EF; }
+  .tool[aria-pressed="true"] { background: var(--g); color: #fff; }
+  .swatch { width: 28px; height: 28px; border-radius: 50%; padding: 0; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line); }
+  .swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--amber); }
+  .size[aria-pressed="true"] { background: var(--g); color: #fff; }
+  #hint { padding: 6px 14px; color: var(--muted); background: #F6F8F6; border-bottom: 1px solid var(--line); min-height: 30px; }
+  #viewer { position: absolute; top: 0; bottom: 0; left: 0; right: 0; overflow: auto; }
+  #wrap { position: relative; flex: 1; }
+  #pages { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 22px 12px 60px; }
+  .page { position: relative; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+  .page canvas { position: absolute; left: 0; top: 0; }
+  .page .num { position: absolute; top: -18px; left: 0; font-size: 12px; color: var(--muted); }
+  body { display: flex; flex-direction: column; }
+  #empty { max-width: 560px; margin: 60px auto; text-align: center; background: #fff; border: 2px dashed #9DB5A3; border-radius: 16px; padding: 40px 28px; }
+  #empty h2 { margin: 0 0 8px; color: var(--g); }
+  #empty p { color: var(--muted); }
+  #editor { position: absolute; z-index: 5; display: none; }
+  #editor input[type=text] { border: 2px solid #2563EB; border-radius: 3px; padding: 0 3px; background: #fff; outline: none; }
+  #editbar { position: absolute; left: 0; top: -44px; display: flex; gap: 6px; align-items: center; background: #1F2937; color: #fff; border-radius: 8px; padding: 5px 8px; white-space: nowrap; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  #editbar button { padding: 4px 9px; font-size: 13px; }
+  #editbar label { display: flex; align-items: center; gap: 4px; }
+  #busy { position: fixed; right: 16px; bottom: 16px; background: #1F2937; color: #fff; padding: 10px 14px; border-radius: 10px; display: none; }
+  .drop #viewer { outline: 4px dashed var(--amber); outline-offset: -8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TraceDesk PDF Editor</h1>
+  <span class="file" id="fileName">No file open</span>
+  <button class="ghost" id="btnInstall" hidden>Install on this PC</button>
+  <button class="ghost" id="btnOpen">Open PDF or photo</button>
+  <button class="primary" id="btnSave" disabled>Save edited PDF</button>
+  <input type="file" id="fileInput" accept="application/pdf,image/*" multiple hidden>
+</header>
+<div id="tools" role="toolbar" aria-label="Editing tools">
+  <button class="tool" data-tool="edit" aria-pressed="true">✎ Edit text</button>
+  <button class="tool" data-tool="add">T Add text</button>
+  <button class="tool" data-tool="pen">✍ Pen / sign</button>
+  <button class="tool" data-tool="white">▭ White-out</button>
+  <button class="tool" data-tool="highlight">▮ Highlight</button>
+  <button class="tool" data-tool="tick">✓ Tick</button>
+  <button class="tool" data-tool="cross">✗ Cross</button>
+  <span class="sep"></span>
+  <button class="swatch" data-color="#000000" aria-label="Black" aria-pressed="true" style="background:#000"></button>
+  <button class="swatch" data-color="#1D4ED8" aria-label="Blue" aria-pressed="false" style="background:#1D4ED8"></button>
+  <button class="swatch" data-color="#DC2626" aria-label="Red" aria-pressed="false" style="background:#DC2626"></button>
+  <span class="sep"></span>
+  <button class="size" data-size="0" aria-pressed="false">S</button>
+  <button class="size" data-size="1" aria-pressed="true">M</button>
+  <button class="size" data-size="2" aria-pressed="false">L</button>
+  <span class="sep"></span>
+  <button id="btnUndo" title="Undo (Ctrl+Z)">↶ Undo</button>
+  <button id="btnZoomOut" aria-label="Zoom out">−</button>
+  <span id="zoomVal">100%</span>
+  <button id="btnZoomIn" aria-label="Zoom in">+</button>
+</div>
+<div id="hint">Open a PDF or a photo to start. You can also drag a file onto this window.</div>
+<div id="wrap">
+  <div id="viewer">
+    <div id="empty">
+      <h2>Edit any PDF without changing its layout</h2>
+      <p>Change words already on the page, add text, sign, tick, white-out or highlight. Works with scanned and photo PDFs too. Your files stay on this computer.</p>
+      <button class="primary" id="btnOpen2">Open PDF or photo</button>
+    </div>
+    <div id="pages"></div>
+  </div>
+</div>
+<div id="editor">
+  <div id="editbar">
+    <label><input type="checkbox" id="edBold"> Bold</label>
+    <label><input type="checkbox" id="edSerif"> Times style</label>
+    <button id="edOk">Apply (Enter)</button>
+    <button id="edOrig">Put back original</button>
+    <button id="edDel">Delete</button>
+    <button id="edCancel">Cancel (Esc)</button>
+  </div>
+  <input type="text" id="edInput" aria-label="Text">
+</div>
+<div id="busy" role="status"></div>
+<script src="lib/pdf-lib.min.js"></script>
+<script src="lib/tesseract.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
